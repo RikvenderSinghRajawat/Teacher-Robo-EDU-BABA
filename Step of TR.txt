@@ -1,0 +1,242 @@
+Certainly! Here's a step-by-step guide to set up the **Teacher Robot** project with complete code and all necessary explanations.
+
+### Overview
+This project combines several functionalities:
+1. **Wikipedia Search** – Users can search for a topic using Wikipedia API and get results limited to 200 words.
+2. **ChatGPT Integration** – Users can ask questions via text or voice input, and get answers from OpenAI’s GPT-3.
+3. **Voice Output** – The answers will also be spoken aloud using Google Text-to-Speech (gTTS).
+4. **Web Interface** – A Flask web server will host the robot’s interface on a local server.
+
+---
+
+### Steps:
+
+#### Step 1: Install Required Libraries
+You need to install the necessary Python libraries:
+
+```bash
+pip install Flask wikipedia-api gTTS pygame openai speechrecognition pyaudio
+```
+
+Explanation of Libraries:
+- **Flask**: A lightweight web framework for hosting the application.
+- **wikipedia-api**: To fetch data from Wikipedia.
+- **gTTS**: For converting text to speech.
+- **pygame**: For playing audio (used to play the gTTS output).
+- **openai**: To access ChatGPT using OpenAI API.
+- **speechrecognition**: For voice input functionality.
+- **pyaudio**: Required for the speech recognition library to work with microphones.
+
+#### Step 2: Flask Application Structure
+You will have two files:
+- `app.py` (your main Flask application script)
+- `templates/combined.html` (HTML file for the web interface)
+
+### `app.py` Code (Flask Application)
+This script sets up the backend of the application, handles Wikipedia search, processes voice input, and fetches answers from GPT-3.
+
+```python
+# Import necessary libraries
+import wikipediaapi
+from gtts import gTTS
+from flask import Flask, render_template, request
+import os
+import speech_recognition as sr
+import openai
+import pygame
+import traceback
+
+# Initialize Flask app
+app = Flask(__name__)
+
+# Set your OpenAI GPT-3 API key
+api_key = "YOUR_API_KEY"  # Replace with your OpenAI API key
+
+# Set a custom user agent for Wikipedia requests
+HEADERS = {'User-Agent': 'YourUserAgent/1.0 (YourEmail@example.com)'}
+wiki_wiki = wikipediaapi.Wikipedia('en', extract_format=wikipediaapi.ExtractFormat.WIKI, headers=HEADERS)
+
+# Function to get a limited response from Wikipedia
+def get_limited_wikipedia_response(topic, max_words=200):
+    page = wiki_wiki.page(topic)
+    if page.exists():
+        summary = page.text
+        words = summary.split()
+        if len(words) > max_words:
+            return ' '.join(words[:max_words])
+        return summary
+    return "I couldn't find any information on that topic."
+
+# Function to get an answer from ChatGPT using OpenAI API
+def get_gpt3_answer(question):
+    openai.api_key = api_key
+    response = openai.Completion.create(
+        engine="davinci",
+        prompt=f"Q: {question}\nA:",
+        max_tokens=150
+    )
+    return response['choices'][0]['text'].strip()
+
+# Function to speak text using gTTS and play audio with pygame
+def speak(text):
+    tts = gTTS(text, lang='en')
+    tts.save("response.mp3")
+    play_audio("response.mp3")
+
+# Function to play an audio file using pygame
+def play_audio(file_path):
+    pygame.mixer.init()
+    pygame.mixer.music.load(file_path)
+    pygame.mixer.music.play()
+    while pygame.mixer.music.get_busy():
+        pygame.time.Clock().tick(10)
+
+# Function to save question and answer to a text file
+def save_to_text_file(question, answer):
+    with open("question_answer.txt", "w") as file:
+        file.write(f"Question: {question}\nAnswer: {answer}")
+
+# Route to render the main webpage
+@app.route('/')
+def index():
+    return render_template('combined.html')
+
+# Route for Wikipedia search
+@app.route('/test_wikipedia_search', methods=['POST'])
+def test_wikipedia_search():
+    try:
+        topic = request.form['topic']
+        topic_answer = get_limited_wikipedia_response(topic, max_words=200)
+        if topic_answer:
+            speak(topic_answer)
+        return render_template('combined.html', result=topic_answer)
+    except Exception as e:
+        traceback.print_exc()
+        return f"Internal Server Error: {e}", 500
+
+# Route for voice-based ChatGPT interaction
+@app.route('/test_chatgpt_voice', methods=['POST'])
+def test_chatgpt_voice():
+    try:
+        # Initialize recognizer and microphone
+        recognizer = sr.Recognizer()
+        microphone = sr.Microphone()
+
+        with microphone as source:
+            recognizer.adjust_for_ambient_noise(source, duration=1)
+            audio = recognizer.listen(source, timeout=15)  # Listen for up to 15 seconds
+
+        try:
+            question = recognizer.recognize_google(audio, show_all=False).lower()
+            answer = get_gpt3_answer(question)
+
+            save_to_text_file(question, answer)
+            speak(answer)
+
+        except sr.UnknownValueError:
+            return "I couldn't understand the audio. Please try again."
+        except sr.RequestError as e:
+            return f"Speech recognition request error: {e}"
+
+        return render_template('combined.html', result=answer)
+    except Exception as e:
+        traceback.print_exc()
+        return f"Internal Server Error: {e}", 500
+
+# Route for text-based ChatGPT interaction
+@app.route('/test_chatgpt_text', methods=['POST'])
+def test_chatgpt_text():
+    try:
+        question = request.form['question']
+        answer = get_gpt3_answer(question)
+
+        save_to_text_file(question, answer)
+        speak(answer)
+
+        return render_template('combined.html', result=answer)
+    except Exception as e:
+        traceback.print_exc()
+        return f"Internal Server Error: {e}", 500
+
+# Start the Flask app
+if __name__ == "__main__":
+    app.run(host='localhost', port=5000, debug=True)
+```
+
+### Explanation of `app.py`:
+- **Wikipedia Search**: Takes input from the user and fetches the result from Wikipedia.
+- **ChatGPT Integration**: Users can ask questions either through text or voice, and the response from ChatGPT will be displayed on the webpage and spoken out using Google TTS.
+- **Voice Recognition**: The `speech_recognition` library listens for audio input and sends it to ChatGPT for processing.
+
+### `combined.html` (Web Interface)
+This HTML file will allow users to search Wikipedia and interact with ChatGPT using either text or voice.
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teacher Robot</title>
+</head>
+<body>
+    <h1>Teacher Robot Interface</h1>
+    
+    <h2>Wikipedia Search</h2>
+    <form action="/test_wikipedia_search" method="post">
+        <label for="topic">Enter a topic:</label>
+        <input type="text" id="topic" name="topic" required>
+        <button type="submit">Search Wikipedia</button>
+    </form>
+
+    <h2>ChatGPT Voice Input</h2>
+    <form action="/test_chatgpt_voice" method="post">
+        <button type="submit">Start Voice Input</button>
+    </form>
+
+    <h2>ChatGPT Text Input</h2>
+    <form action="/test_chatgpt_text" method="post">
+        <label for="question">Enter your question:</label>
+        <input type="text" id="question" name="question" required>
+        <button type="submit">Ask ChatGPT</button>
+    </form>
+
+    {% if result %}
+        <h2>Result:</h2>
+        <p>{{ result }}</p>
+    {% endif %}
+</body>
+</html>
+```
+
+### Explanation of `combined.html`:
+- **Wikipedia Search**: Users can enter a topic and get a response from Wikipedia.
+- **ChatGPT Voice Input**: Clicking the button starts the microphone for voice input.
+- **ChatGPT Text Input**: Users can type a question, and the response is shown on the web page.
+
+---
+
+#### Step 3: Run the Flask Application
+Once your environment is set up, run the Flask application:
+
+```bash
+python app.py
+```
+
+This will start the server, and the application will be hosted at `http://localhost:5000`.
+
+---
+
+#### Step 4: Test the Application
+- Open a browser and navigate to `http://localhost:5000`.
+- Try searching for a Wikipedia topic or ask ChatGPT a question via text or voice.
+
+---
+
+#### Step 5: Hardware Extension (Optional)
+If you're integrating mobility with your robot (like a car), you can add code to control the car's motors based on input commands from the web interface.
+
+---
+
+### Conclusion:
+This project combines AI (ChatGPT), speech recognition, and a web-based interface into a single application, which can be extended for hardware (robotic) integration.

@@ -1,0 +1,9 @@
+Explanation of Libraries:
+
+Flask: A lightweight web framework for hosting the application.
+wikipedia-api: To fetch data from Wikipedia.
+gTTS: For converting text to speech.
+pygame: For playing audio (used to play the gTTS output).
+openai: To access ChatGPT using OpenAI API.
+speechrecognition: For voice input functionality.
+pyaudio: Required for the speech recognition library to work with microphones.
